@@ -1,0 +1,28 @@
+---
+apiVersion: networking.appvia.io/v2beta1
+kind: ClusterNetworkPlan
+metadata:
+  annotations:
+    defaults.appvia.io/version: v2.4.5-1700584078
+  name: eks-standard
+spec:
+  planProviderDetails: {}
+  summary: General purpose EKS cluster network.
+  template:
+    ipv4:
+      cidrBlocks:
+        - cidr: 10.0.0.0/24
+          size: 0
+          type: node
+    layout:
+      mode: auto
+      privateSubnets: 3
+      publicSubnets: 3
+    location: ""
+    plan: eks-standard
+    provider: aws
+    providerDetails:
+      aws:
+        availabilityZones: 3
+      type: aws
+    stage: ""

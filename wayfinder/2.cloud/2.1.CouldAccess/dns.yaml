@@ -1,0 +1,15 @@
+apiVersion: cloudaccess.appvia.io/v2beta2
+kind: CloudAccessConfig
+metadata:
+  name: dns
+  namespace: ws-admin
+spec:
+  azure:
+    subscription: xxxx
+  cloud: azure
+  cloudIdentityRef:
+    cloud: azure
+    name: cloudidentity-azure
+  permissions:
+  - permission: DNSZoneManager
+  type: DNSZoneManagement

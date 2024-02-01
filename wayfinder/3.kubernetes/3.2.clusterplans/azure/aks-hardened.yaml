@@ -1,0 +1,137 @@
+---
+apiVersion: compute.appvia.io/v2beta1
+kind: ClusterPlan
+metadata:
+  annotations:
+    defaults.appvia.io/version: v2.4.5-1700584078
+  name: aks-hardened
+spec:
+  allocation:
+    type: all
+    workspaces:
+      - "*"
+  summary:
+    Hardened AKS cluster with a default "restricted" PSS Policy and no public
+    ingress controller.
+  template:
+    channel: default
+    enableAutoUpgrade: false
+    enablePrivateCluster: false
+    networking:
+      aksServicesNetwork: 172.16.0.0/16
+      authorizedMasterNetworks:
+        - cidr: 0.0.0.0/0
+          name: default
+      authorizedNetworks:
+        - cidr: 0.0.0.0/0
+          name: default
+      networkPlan: aks-standard
+    nodePools:
+      - autoscaling:
+          enabled: true
+          maxSize: 10
+          minSize: 2
+        diskSize: 30
+        image: Linux
+        logicalName: system
+        machine: Standard_D2s_v5
+        maxPodsPerNode: 110
+        providerDetails:
+          aks:
+            mode: system
+          type: AKS
+        size: 2
+        taints:
+          - effect: NoSchedule
+            key: CriticalAddonsOnly
+            value: "true"
+      - autoscaling:
+          enabled: true
+          maxSize: 10
+          minSize: 1
+        diskSize: 30
+        image: Linux
+        logicalName: compute
+        machine: Standard_D2s_v5
+        maxPodsPerNode: 110
+        providerDetails:
+          aks:
+            mode: user
+          type: AKS
+        size: 1
+    provider: AKS
+    providerDetails:
+      aks:
+        nodeOSUpgradeChannel: NodeImage
+        skuTier: Paid
+      type: AKS
+    quotaLimits:
+      default: small
+      templates:
+        - constraints:
+            hardQuota:
+              requests.cpu: "1"
+              requests.memory: 3.5Gi
+            limitRanges:
+              - max:
+                  cpu: 256m
+                  ephemeral-storage: 2.175Gi
+                  memory: 896Mi
+                type: Pod
+          name: small
+          resourceDefaults:
+            - default:
+                cpu: 256m
+                ephemeral-storage: 10Mi
+                memory: 896Mi
+              defaultRequest:
+                cpu: 50m
+                memory: 200Mi
+              type: Container
+        - constraints:
+            hardQuota:
+              requests.cpu: "2"
+              requests.memory: 7Gi
+            limitRanges:
+              - max:
+                  cpu: 512m
+                  ephemeral-storage: 4.35Gi
+                  memory: 1792Mi
+                type: Pod
+          name: medium
+          resourceDefaults:
+            - default:
+                cpu: 512m
+                ephemeral-storage: 500Mi
+                memory: 1792Mi
+              defaultRequest:
+                cpu: 50m
+                memory: 200Mi
+              type: Container
+        - constraints:
+            hardQuota:
+              requests.cpu: "4"
+              requests.memory: 14Gi
+            limitRanges:
+              - max:
+                  cpu: "1"
+                  ephemeral-storage: 8.7Gi
+                  memory: 3584Mi
+                type: Pod
+          name: large
+          resourceDefaults:
+            - default:
+                cpu: "1"
+                ephemeral-storage: 1Gi
+                memory: 3584Mi
+              defaultRequest:
+                cpu: 50m
+                memory: 200Mi
+              type: Container
+    region: uksouth
+    security:
+      podSecurityStandard:
+        allowed:
+          - restricted
+        defaultProfile: restricted
+        enabled: true

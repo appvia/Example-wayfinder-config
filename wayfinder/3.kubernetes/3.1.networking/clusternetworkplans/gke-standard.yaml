@@ -1,0 +1,27 @@
+---
+apiVersion: networking.appvia.io/v2beta1
+kind: ClusterNetworkPlan
+metadata:
+  annotations:
+    defaults.appvia.io/version: v2.4.5-1700584078
+  name: gke-standard
+spec:
+  planProviderDetails: {}
+  summary: General purpose GKE cluster network.
+  template:
+    ipv4:
+      cidrBlocks:
+        - cidr: 10.0.0.0/20
+          size: 0
+          type: node
+        - cidr: 10.8.0.0/20
+          size: 0
+          type: service
+        - cidr: 10.16.0.0/18
+          size: 0
+          type: pod
+    layout: {}
+    location: ""
+    plan: gke-standard
+    provider: gcp
+    stage: ""

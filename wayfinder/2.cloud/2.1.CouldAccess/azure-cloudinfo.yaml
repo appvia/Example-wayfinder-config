@@ -1,0 +1,17 @@
+apiVersion: cloudaccess.appvia.io/v2beta2
+kind: CloudAccessConfig
+metadata:
+  name: azure-cloudinfo
+  namespace: ws-admin
+spec:
+  azure:
+    subscription: xxxx
+    tenantID: xxxx
+  cloud: azure
+  cloudIdentityRef:
+    cloud: azure
+    name: cloudidentity-azure
+  description: Platform cloud metadata access, created by Wayfinder install
+  permissions:
+  - permission: CloudInfo
+  type: CostEstimates

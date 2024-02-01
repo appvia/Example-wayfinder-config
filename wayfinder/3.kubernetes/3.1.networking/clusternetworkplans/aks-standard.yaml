@@ -1,0 +1,24 @@
+---
+apiVersion: networking.appvia.io/v2beta1
+kind: ClusterNetworkPlan
+metadata:
+  annotations:
+    defaults.appvia.io/version: v2.4.5-1700584078
+  name: aks-standard
+spec:
+  planProviderDetails: {}
+  summary: General purpose AKS cluster network.
+  template:
+    ipv4:
+      cidrBlocks:
+        - cidr: 10.0.0.0/21
+          size: 0
+          type: node
+        - cidr: 172.16.0.0/16
+          size: 0
+          type: service
+    layout: {}
+    location: ""
+    plan: aks-standard
+    provider: azure
+    stage: ""

@@ -1,0 +1,13 @@
+apiVersion: org.appvia.io/v2beta1
+kind: Workspace
+metadata:
+  name: demo
+spec:
+  description: This is for demos
+  key: demo
+  owners:
+  - kind: User
+    name: xxx
+  resourceNamespace: ws-demo
+  summary: demo
+  type: standard

@@ -1,0 +1,19 @@
+---
+apiVersion: dns.appvia.io/v2beta1
+kind: GlobalDNSZone
+metadata:
+  labels:
+    name: pord-azure-amir-appvia-dev
+  name: pord-azure-amir-appvia-dev
+spec:
+  allocation:
+    type: all
+  availableToApps:
+    stage: prod
+  cloudAccessConfigRef:
+    name: dns
+    namespace: ws-admin
+  cloudResourceName: global-pord-azure-amir-appvia-dev
+  domain: pord.azure.amir.appvia.dev
+  private: false
+  provider: azure

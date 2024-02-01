@@ -1,0 +1,251 @@
+pr: none
+
+parameters:
+  - name: useMicrosoftAgents
+    displayName: Use Microsoft Hosted Agents (Greenfield)
+    type: boolean
+    default: false
+  - name: baseVersion
+    displayName: Base version of artifact
+    type: string
+    default: '1.0'
+
+variables:
+  - group: Wayfinder
+
+stages:
+  - stage: Platform_config
+    displayName: "Platform_config"
+    jobs:
+      - job: get_certificates
+        displayName: "Get Certificates"
+        pool:
+          name: 'Linux.AzureDevops.Ubuntu.2204.Prod'
+        steps:
+          - task: AzureCLI@2
+            displayName: 'Get Internal CA'
+            name: get_certificates
+            inputs:
+              azureSubscription: 'devops-agents-prd.id-devops-agents-prd.Prod'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
+              inlineScript:  |
+                #### get certs ####
+                az keyvault certificate download --vault-name kv-wayfinder-ca-142b --name root-ca --encoding PEM --file ./jjroot.crt
+                az keyvault certificate download --vault-name kv-wayfinder-ca-142b --name signing-ca --encoding PEM --file ./jjsigning.crt
+                echo "##vso[task.setvariable variable=rootCA;isOutput=true]`sed 's/$/%n/g' ./jjroot.crt | tr -d '\n'`"
+                echo "##vso[task.setvariable variable=signingCA;isOutput=true]`sed 's/$/%n/g' ./jjsigning.crt | tr -d '\n'`"
+      - job: Platform_config_dry_run
+        displayName: "Wayfinder Config Dry Run"
+        dependsOn: get_certificates
+        variables:
+          rootCA: $[ dependencies.get_certificates.outputs['get_certificates.rootCA'] ]
+          signingCA: $[ dependencies.get_certificates.outputs['get_certificates.signingCA'] ]
+        # condition: and(succeeded(), eq(variables['Build.Reason'], 'PullRequest'))
+        pool:
+          name: 'Linux.AzureDevops.Ubuntu.2204.Prod'
+        container: 
+          image: quay.io/appvia-wayfinder/wftoolboxazdo:v2.4.5
+        steps:
+          - bash: |
+              echo "##vso[task.setvariable variable=service;isOutput=true]`echo $(Build.Repository.Name) | sed -e 's/jjfood\///'`"
+              echo "##vso[task.setvariable variable=build;isOutput=true]true"
+              echo "##vso[task.setvariable variable=deploy;isOutput=true]false"
+              echo "##vso[task.setvariable variable=releaseType;isOutput=true]"
+              sourceBranchName=$(echo $(build.sourceBranch) | sed -e 's/refs\/heads\///')
+              echo "##vso[task.setvariable variable=sourceBranchName;isOutput=true]${sourceBranchName}"
+              
+              if [[ ${sourceBranchName} =~ develop|master|main ]]
+              then
+                echo "Release candidate"
+                echo "##vso[task.setvariable variable=deploy;isOutput=true]true"
+                echo "##vso[task.setvariable variable=releaseType;isOutput=true]RC"
+                deployVersion="${{ parameters.baseVersion }}.$(build.buildId)"
+                deployVersionLowerCase="${{ parameters.baseVersion }}.$(build.buildId)"
+                echo "##vso[task.setvariable variable=tag;isOutput=true]${deployVersion}-RC"
+                echo "##vso[task.setvariable variable=releaseTag;isOutput=true]${deployVersion}-RELEASE"
+              else
+                echo "Snapshot"
+                echo "$(build.sourceVersionMessage)"
+                deployVersion="0.$(build.buildId)-SNAPSHOT"
+                deployVersionLowerCase="0.$(build.buildId)-snapshot"
+                echo "##vso[task.setvariable variable=releaseType;isOutput=true]SNAPSHOT"
+                echo "##vso[task.setvariable variable=tag;isOutput=true]0.$(build.buildId)-SNAPSHOT"
+                if [[ "$(build.sourceVersionMessage)" =~ "#deploytodev"  ]]
+                then
+                  echo "##vso[task.setvariable variable=deploy;isOutput=true]true"
+                fi
+              fi
+              echo "##vso[task.setvariable variable=deployVersion;isOutput=true]${deployVersion}"
+              echo "##vso[task.setvariable variable=deployVersionLowerCase;isOutput=true]${deployVersionLowerCase}"
+            displayName: "Setup Variables"
+            name: Variables
+          
+          - bash: |
+              echo "Build version $(build.buildNumber)"
+              echo "Repo $(Build.Repository.Name)"
+              echo "Branch $(Variables.sourceBranchName)"
+              echo "Commit Message $(build.sourceVersionMessage)"
+              echo "Service $(Variables.service)"
+              echo "Build $(Variables.build)"
+              echo "Deploy $(Variables.deploy)"
+              echo "Deploy version $(Variables.deployVersion)"
+              echo "Tag $(Variables.tag)"
+              echo "ReleaseType $(Variables.releaseType)"
+            displayName: Display variables
+
+          - bash: |
+              echo $(rootCA) | sed 's/%n/\n/g' > ./rootCA.crt
+              echo $(signingCA) | sed 's/%n/\n/g' > ./signingCA.crt
+              sudo cp ./rootCA.crt /usr/local/share/ca-certificates/rootCA.crt
+              sudo cp ./signingCA.crt /usr/local/share/ca-certificates/signingCA.crt
+              sudo update-ca-certificates -v
+            displayName: "Install certificates"
+
+          - bash: |
+              echo yamllint ./platform
+            displayName: Run yamllint (ignored)
+
+          - bash: |
+              wf apply -f ./platform --owner platform-ci --dry-run client --verbose --debug 
+            displayName: "Platform Dry Run (Client)"
+            env:
+              WAYFINDER_TOKEN: $(WAYFINDER_PLATFORM_TOKEN)
+              WAYFINDER_SERVER: $(WAYFINDER_SERVER)
+
+          - bash: |
+              wf apply -f ./platform --owner platform-ci --dry-run server --verbose --debug 
+            displayName: "Platform Dry Run (Server)"
+            env:
+              WAYFINDER_TOKEN: $(WAYFINDER_PLATFORM_TOKEN)
+              WAYFINDER_SERVER: $(WAYFINDER_SERVER)
+
+
+#           - bash: |
+#               set +e
+#               # Later this needs to support the owner flag: https://appviakore.atlassian.net/browse/WF-3683
+#               wf diff -f ./Platform 2>&1 | tee stdout.txt
+#               diffExitCode=$?
+#               EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+#               echo "stdout<<$EOF" >> "$GITHUB_OUTPUT"
+#               cat stdout.txt >> "$GITHUB_OUTPUT"
+#               echo "$EOF" >> "$GITHUB_OUTPUT"
+#               exit $diffExitCode
+#             displayName: Platform diff
+#             env:
+#               WAYFINDER_TOKEN: "$(WAYFINDER_PLATFORM_TOKEN)"
+#               WAYFINDER_SERVER: "$(WAYFINDER_SERVER)"
+#             # outputs:
+#             #   result: ${{ steps.diff.outcome }}
+#             #   stdout: ${{ steps.diff.outputs.stdout }}
+              
+# #  echo $(setvarStep.EOF)
+# #  echo $(setvarStep.EOF)
+
+
+
+#       - job: update-pr
+#         condition: eq(variables['Build.Reason'], 'PullRequest')
+#         dependsOn: 
+#           - yaml-lint
+#           - wf-dry-run-client
+#           - wf-dry-run-server
+#           # - wf-diff
+#         pool:
+#           name: 'Linux.AzureDevops.Ubuntu.2204.Prod'
+#         container: 
+#           image: quay.io/appvia-wayfinder/wftoolboxazdo:v2.4.5
+#         env:
+#           DIFF_RESULT: $(result)
+#           DIFF_STDOUT: $(stdout)
+#         steps:
+#           - checkout: self
+
+#           - bash: | 
+#             // 1. Retrieve existing bot comments for the PR
+#             const { data: comments } = await github.rest.issues.listComments({
+#               owner: context.repo.owner,
+#               repo: context.repo.repo,
+#               issue_number: context.issue.number,
+#             })
+#             const botComment = comments.find(comment => {
+#               return comment.user.type === 'Bot' && comment.body.includes('Pull Request Review Status')
+#             })
+
+#             // 2. Check output length
+#             const wfDiff = process.env.WF_DIFF || '';
+#             var diffOutput = wfDiff.trim();
+#             if (diffOutput.length < 1 || diffOutput.length > 65000) {
+#               diffOutput = "Wayfinder diff output is too large, please view the workflow run logs directly."
+#             }
+
+#             // 3. Prepare format of the comment
+#             const output = `### Pull Request Review Status
+#             * 🔍 <b>YAML Lint:</b>                  \`${{ needs.yaml-lint.outputs.result }}\`
+#             * 🤖 <b>Wayfinder Dry Run (Client):</b> \`${{ needs.wf-dry-run-client.outputs.result }}\`
+#             * 🤖 <b>Wayfinder Dry Run (Server):</b> \`${{ needs.wf-dry-run-server.outputs.result }}\`
+#             * 📖 <b>Wayfinder Diff:</b>             \`${{ needs.wf-diff.outputs.result }}\`
+
+#             <details><summary><b>Output: 📖 Wayfinder Diff</b></summary>
+
+#             \`\`\`
+#             ${diffOutput}
+#             \`\`\`
+#             </details>
+
+#             *<b>Pusher:</b> @${{ github.actor }}, <b>Action:</b> \`${{ github.event_name }}\`*
+#             *<b>Workflow Run Link:</b> ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}*`;
+
+#             // 4. If we have a comment, update it, otherwise create a new one
+#             if (botComment) {
+#               github.rest.issues.updateComment({
+#                 owner: context.repo.owner,
+#                 repo: context.repo.repo,
+#                 comment_id: botComment.id,
+#                 body: output
+#               })
+#             } else {
+#               github.rest.issues.createComment({
+#                 issue_number: context.issue.number,
+#                 owner: context.repo.owner,
+#                 repo: context.repo.repo,
+#                 body: output
+#               })
+#             }
+#           displayName: Platform diff
+#             env:
+#               WF_DIFF: "${{ needs.wf-diff.outputs.stdout }}"
+
+
+      - job: wf_apply
+        condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+        dependsOn: 
+          - Platform_config_dry_run
+          - get_certificates
+        variables:
+          rootCA: $[ dependencies.get_certificates.outputs['get_certificates.rootCA'] ]
+          signingCA: $[ dependencies.get_certificates.outputs['get_certificates.signingCA'] ]
+        pool:
+          name: 'Linux.AzureDevops.Ubuntu.2204.Prod'
+        container: 
+          image: quay.io/appvia-wayfinder/wftoolboxazdo:v2.4.5
+        steps:
+          - checkout: self
+
+          - bash: |
+              echo $(rootCA) | sed 's/%n/\n/g' > ./rootCA.crt
+              echo $(signingCA) | sed 's/%n/\n/g' > ./signingCA.crt
+              sudo cp ./rootCA.crt /usr/local/share/ca-certificates/rootCA.crt
+              sudo cp ./signingCA.crt /usr/local/share/ca-certificates/signingCA.crt
+              sudo update-ca-certificates -v
+            displayName: "Install certificates"
+
+          - bash: |
+              # wf apply -f ./platform --owner platform-ci  --prune --prune-scope all --wait-for-ready 5m --confirm
+              wf apply -f ./platform --owner platform-ci --wait-for-ready 10m --confirm
+            displayName: Platform Apply
+            env:
+              WAYFINDER_TOKEN: $(WAYFINDER_PLATFORM_TOKEN)
+              WAYFINDER_SERVER: $(WAYFINDER_SERVER)
+               
